@@ -1,0 +1,11 @@
+(executable
+ (public_name ocaml_parser_tuto)
+ (name main)
+ (modules main parser ast lexer utils)
+ (libraries ocaml_parser_tuto))
+
+(ocamllex
+ (modules lexer))
+
+(menhir
+ (modules parser))
