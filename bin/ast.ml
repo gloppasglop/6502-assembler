@@ -2,22 +2,24 @@ type bop =
   | Add
   | Mult
 
-type address =
-  | Accumulator
-  | Implied
-  | Immediate of int
-  | Absolute of int
-  | Zeropage of int
-  | AbsoluteX of int
-  | AbsoluteY of int
-  | ZeropageX of int
-  | ZeropageY of int
-  | Indirect of int
-  | PreIndexIndirect of int (* X-indexed, indirect.*)
-  | PostIndexIndirect of int (* indirect, Y-indexed.*)
-  | Relative of int
+type unop =
+  | Highbyte
+  | Lowbyte
 
-type instruction =
+type symbol = Symbol of string
+
+type value_expr =
+  | Int of int
+  | Binop of bop * value_expr * value_expr
+  | Unop of unop * value_expr
+
+(*
+   type value_expr =
+   | Arithm of arithm_expr
+   | Unop of unop * arithm_expr
+*)
+
+type mnemonic =
   | Adc
   | And
   | Asl
@@ -75,7 +77,14 @@ type instruction =
   | Txs
   | Tya
 
-type expr =
-  | Int of int
-  | Instruction of instruction * address
-  | Binop of bop * expr * expr
+type opcode = int
+type loc = Lexing.position
+
+open Instructions
+
+type instruction = Instructions.instruction
+
+type asm_expr =
+  | Instruction of loc * instruction * value_expr option
+  | Assign of symbol * value_expr
+  | Label of string

@@ -1,7 +1,7 @@
 (executable
  (public_name ocaml_parser_tuto)
  (name main)
- (modules main parser ast lexer utils)
+ (modules main parser ast lexer utils instructions)
  (libraries ocaml_parser_tuto))
 
 (ocamllex

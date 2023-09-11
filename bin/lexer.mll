@@ -1,10 +1,23 @@
 {
 open Parser
+open Lexing
+
+let next_line lexbuf =
+  let pos = lexbuf.lex_curr_p in
+  lexbuf.lex_curr_p <-
+    { pos with pos_bol = lexbuf.lex_curr_pos;
+               pos_lnum = pos.pos_lnum + 1
+    }
 }
 
+let newline = '\n' | "\r\n"
 let digit = ['0'-'9']
 let int = '-'? digit+
 let wsp = [' ' '\t']+
+let alpha = ['a'-'z' 'A'-'Z']
+
+let id = (alpha) (alpha|digit|'_')*
+
 
 let hexprefix = "0x" | '$' | '&'
 let hexdigit = ['0'-'9' 'A'-'F']
@@ -19,13 +32,21 @@ let binaryprefix = "0b" | '%'
 let binarydigit = ['0'-'1']
 let binaryint = binaryprefix binarydigit+
 
+
 rule read = 
 	parse
 	| wsp { read lexbuf}
+  | newline { next_line lexbuf; read lexbuf }
 	| "+" { PLUS }
 	| "*" { MULT }
+	| "=" { EQUAL }
+	| ":" { COLON }
 	| "(" { LPAREN }
 	| ")" { RPAREN }
+	| ">" { GT }
+	| "<" { LT }
+	| "[" { LBRACKET }
+	| "]" { RBRACKET }
 	| "#" { POUND }
 	| "," { COMMA }
 	| "X" { X }
@@ -91,4 +112,11 @@ rule read =
 	| hexint { INT ( Utils.int_of_hexstring (Lexing.lexeme lexbuf)) }
 	| octalint { INT ( Utils.int_of_octalstring (Lexing.lexeme lexbuf)) }
 	| binaryint { INT ( Utils.int_of_binarystring (Lexing.lexeme lexbuf)) }
+	| id { ID ( Lexing.lexeme lexbuf)}
+	| ";" { read_comment lexbuf }
 	| eof { EOF }
+and read_comment = 
+parse
+	| newline { next_line lexbuf; read lexbuf }
+	| eof { EOF}
+	| _ { read_comment lexbuf}
