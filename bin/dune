@@ -1,5 +1,5 @@
 (executable
- (public_name ocaml_parser_tuto)
+ (public_name ocasm6502)
  (name main)
  (modules main parser ast lexer utils instructions)
  (libraries ocaml_parser_tuto))
