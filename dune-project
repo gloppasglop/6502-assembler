@@ -1,27 +1,27 @@
 (lang dune 3.9)
 
-(name ocaml_parser_tuto)
+(name ocasm6502)
 
 (generate_opam_files true)
 
 (source
  (github username/reponame))
 
-(authors "Author Name")
+(authors "Christophe Roux")
 
-(maintainers "Maintainer Name")
+(maintainers "Christophe Roux")
 
-(license LICENSE)
+(license MIT)
 
-(documentation https://url/to/documentation)
+(documentation https://github.com/gloppasglop/6502-assembler/README.md)
 
 (package
- (name ocaml_parser_tuto)
- (synopsis "A short synopsis")
- (description "A longer description")
+ (name ocasm6502)
+ (synopsis "A 6502 Assembler")
+ (description "A 6502 Assembler")
  (depends ocaml dune)
  (tags
-  (topics "to describe" your project)))
+  (topics "6502" assembler)))
 
 (using menhir 2.1)
 
