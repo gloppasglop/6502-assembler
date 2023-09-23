@@ -1,372 +1,140 @@
 open Ast
-open Instructions
+module Env = Map.Make (String)
 
-let parse (s : string) : asm_expr list =
+let empty_env = Env.empty
+
+type env = int Env.t
+
+let pp_env e = Env.iter (fun k v -> Printf.printf "Env: %s = %d\n" k v) e
+
+let parse (s : string) : line list =
   let lexbuf = Lexing.from_string s in
   let ast = Parser.program Lexer.read lexbuf in
   ast
-;;
-
-(* TODO: Do not generate exception*)
-let is_value e =
-  match e with
-  | Int i -> if i <= 0xFFFF then true else failwith "Integer should be 32bits"
-  | Binop _ -> false
-  | Unop _ -> false
-;;
-
-(*
-   let is_asm_expr_value e =
-   match e with
-   | Instruction (_, _, v) ->
-   (match v with
-   | Some v -> is_value v
-   | None -> true)
-   | Assign (_, v) -> is_value v
-   ;;
-*)
-
-let pp_addressing_mode a i =
-  match a with
-  | Instructions.Accumulator -> Printf.sprintf "A ; ACCUMULATOR"
-  | Implied -> Printf.sprintf " ; IMPLIED"
-  | Immediate -> Printf.sprintf "#$%X ; IMMEDIATE" i
-  | Absolute -> Printf.sprintf "$%X ; ABSOLUTE" i
-  | Zeropage -> Printf.sprintf "$%X ; ZEROPAGE" i
-  | AbsoluteX -> Printf.sprintf "$%X,X ; ABSOLUTE,X" i
-  | ZeropageX -> Printf.sprintf "$%X,X ; ZEROPAGE,X" i
-  | AbsoluteY -> Printf.sprintf "$%X,Y ; ABSOLUTE,Y" i
-  | ZeropageY -> Printf.sprintf "$%X,Y ; ZEROPAGE,Y" i
-  | PreIndexIndirect -> Printf.sprintf "($%X,X) ; (INDIRECT,X)" i
-  | PostIndexIndirect -> Printf.sprintf "($%X),Y; (INDIRECT),Y" i
-  (* | Implied -> Printf.sprintf " ; IMPLIED" *)
-  | Indirect -> Printf.sprintf "($%X) ; INDIRECT" i
-  | Relative -> Printf.sprintf "$%X ; RELATIVE" i
-;;
-
-let pp_instruction (i : Instructions.instruction) : string = i.mnemonic
-
-let int_of_val e =
-  match e with
-  | Int i -> i land 0xFFFF
-  | Binop _ -> failwith "Got Binop. Must be a value"
-  | Unop _ -> failwith "Got Unop. Must be a value"
-;;
-
-(* TODO: Cleanup, should not return 0 for None*)
-let int_of_opt_val e =
-  match e with
-  | Some v -> int_of_val v
-  | None -> 0
-;;
-
-(* TODO: Move all pp_ into instructions module*)
-let string_of_instr inst =
-  match inst with
-  | Instruction (loc, inst, v) ->
-    Printf.sprintf
-      "(%d) %s %s"
-      loc.pos_lnum
-      (pp_instruction inst)
-      (pp_addressing_mode inst.addressing (int_of_opt_val v))
-  | Assign (Symbol id, v) -> Printf.sprintf "%s = $%X\n" id (int_of_val v)
-  | Label l -> Printf.sprintf "%s:\n" l
-;;
-
-let rec step_value e =
-  match e with
-  | Int _ -> failwith "No more steps"
-  | Binop (op, e1, e2) when is_value e1 && is_value e2 -> step_binop op e1 e2
-  | Binop (op, e1, e2) when is_value e1 -> Binop (op, e1, step_value e2)
-  | Binop (op, e1, e2) -> Binop (op, step_value e1, e2)
-  | Unop (op, e) when is_value e -> step_unop op e
-  | Unop (op, e) -> Unop (op, step_value e)
-
-and step_binop bop v1 v2 =
-  match bop, v1, v2 with
-  | Add, Int i1, Int i2 -> Int (i1 + i2)
-  | Add, _, _ -> failwith "Step add add should only work with values"
-  | Mult, Int i1, Int i2 -> Int (i1 * i2)
-  | Mult, _, _ -> failwith "Step add add should only work with values"
-
-and step_unop op v =
-  match op, v with
-  | Highbyte, Int i -> Int ((i land 0xFF00) lsr 8)
-  | Highbyte, _ -> failwith "Step add add should only work with values"
-  | Lowbyte, Int i -> Int (i land 0xFF)
-  | Lowbyte, _ -> failwith "Step add add should only work with values"
 ;;
 
 (* Check if operand of Absolute, AboluteX and AbsoluteY is smaller than 255
    In that case, we have a ZeroPage
    For AbsoluteY, we only have ZeroPageY for LDX and STX
 *)
-let fix_zeropage instruction =
+open Instructions
+
+let fix_zeropage (instruction : asm_line) : asm_line =
   match instruction with
-  | Instruction (loc, inst, v) ->
+  | Instruction (inst, v) ->
     (match v with
-     | Some i ->
-       if is_value i
-       then (
-         match inst.addressing with
-         | Absolute ->
-           if int_of_opt_val v <= 255
-           then Instruction (loc, { inst with addressing = Zeropage }, v)
-           else Instruction (loc, { inst with addressing = Absolute }, v)
-         | AbsoluteX ->
-           if int_of_opt_val v <= 255
-           then Instruction (loc, { inst with addressing = ZeropageX }, v)
-           else Instruction (loc, { inst with addressing = AbsoluteX }, v)
-         | AbsoluteY ->
-           (match inst.mnemonic with
-            | "LDX" | "STX" ->
-              if int_of_opt_val v <= 255
-              then Instruction (loc, { inst with addressing = ZeropageY }, v)
-              else Instruction (loc, { inst with addressing = AbsoluteY }, v)
-            | _ -> Instruction (loc, { inst with addressing = AbsoluteY }, v))
-         | _ -> Instruction (loc, inst, v))
-       else Instruction (loc, inst, v)
-     | None -> Instruction (loc, inst, v))
-  | _ -> failwith "Impossible"
+     | Some v' ->
+       (match v' with
+        | Int i ->
+          (match inst.addressing with
+           | Absolute ->
+             if i <= 255
+             then Instruction (Instructions.get_instruction inst.mnemonic Zeropage, v)
+             else Instruction ({ inst with addressing = Absolute }, v)
+           | AbsoluteX ->
+             if i <= 255
+             then Instruction (Instructions.get_instruction inst.mnemonic ZeropageX, v)
+             else Instruction (Instructions.get_instruction inst.mnemonic AbsoluteX, v)
+           | AbsoluteY ->
+             (match inst.mnemonic with
+              | LDX | STX ->
+                if i <= 255
+                then Instruction (Instructions.get_instruction inst.mnemonic ZeropageY, v)
+                else Instruction (Instructions.get_instruction inst.mnemonic AbsoluteY, v)
+              | _ -> Instruction (Instructions.get_instruction inst.mnemonic AbsoluteY, v))
+           | _ -> instruction)
+        | _ -> instruction)
+     | None -> Instruction (inst, v))
 ;;
 
-let rec step e =
-  match e with
-  | Instruction (loc, inst, Some v) ->
-    if is_value v
-    then fix_zeropage e
-    else step (Instruction (loc, inst, Some (step_value v)))
-  | Instruction (_, _, None) -> e
-  | Assign (s, v) -> if is_value v then e else step (Assign (s, step_value v))
-  | Label _ -> e
-;;
+type loc = int
+type address = int
+type evaluated_pgm_line = loc * address * line
 
-let eval e = string_of_instr e
+let rec eval_pgm
+  (environment : env)
+  (evaluated_pgm : evaluated_pgm_line list)
+  (pgm : line list)
+  : env * evaluated_pgm_line list
+  =
+  match pgm with
+  | [] -> environment, evaluated_pgm
+  | head :: tail ->
+    let loc, address =
+      match evaluated_pgm with
+      | [] -> 0, 0
+      | (loc, address, line') :: _ ->
+        (match line' with
+         | Assign (_, _) -> loc + 1, address
+         | Instruction (i, _) -> loc + 1, address + i.bytes)
+    in
+    let env', _, line = eval_asm environment head in
+    eval_pgm env' ((loc, address, line) :: evaluated_pgm) tail
 
-let interp s =
-  let exprs = s |> parse in
-  List.map (fun expr -> expr |> step |> eval) exprs
-;;
+and eval_asm (environment : env) line =
+  match line with
+  | Assign (s, v) ->
+    let env', line' = eval_assign environment s v in
+    env', 0, line'
+  | Instruction (inst, Some v) ->
+    let _, v' = eval_value environment v in
+    let (Instruction (inst', v')) = fix_zeropage (Instruction (inst, Some v')) in
+    environment, inst'.bytes, Instruction (inst', v')
+  | Instruction (inst, None) -> environment, inst.bytes, line
+(*
+   let _, v' = eval_value env v in
+   (match v' with
+   | VInt i ->
+   if i > 0xFFFF
+   then failwith "Value too large"
+   else if i <= 0xFF
+   then env, Instruction (inst, Some (Int ((inst.opcode lsl 8) lor i)))
+   else
+   ( env
+   , Instruction
+   ( inst
+   , Some
+   (Int
+   ((inst.opcode lsl 16)
+   lor ((i land 0xFF00) lsr 8)
+   lor ((i land 0x00FF) lsl 8))) ) ))
+*)
 
-let pgm =
-  {|
-    ; TEsting NOP
-    NOP
-    LDA #12
-    LDA #0b11111111
-    LDA #$12
-    LDA $12
-    LDA $1212
-    LDA $12,X
-    LDA $1212,X
-    LDA $12,Y
-    LDA $1212,Y
-    LDA ($12,X)
-    LDA ($12),Y
-    ADC #12
-    ADC #0b11111111
-    ADC #$12
-    ADC $12
-    ADC $1212
-    ADC $12,X
-    ADC $1212,X
-    ADC $12,Y
-    ADC $1212,Y
-    ADC ($12,X)
-    ADC ($12),Y
-    AND #12
-    AND #0b11111111
-    AND #$12
-    AND $12
-    AND $1212
-    AND $12,X
-    AND $1212,X
-    AND $12,Y
-    AND $1212,Y
-    AND ($12,X)
-    AND ($12),Y
-    ASL
-    ASL A
-    ASL $12
-    ASL $1212
-    ASL $12,X
-    ASL $1212,X
-    BCC $1212
-    BCS $1212
-    BEQ $1212
-    BIT $12
-    BIT $1212
-    BMI $1212
-    BNE $1212
-    BPL $1212
-    BRK
-    BVC $1212
-    BVS $1212
-    CLC
-    CLD
-    CLI
-    CLV
-    CMP #12
-    CMP #0b11111111
-    CMP #$12
-    CMP $12
-    CMP $1212
-    CMP $12,X
-    CMP $1212,X
-    CMP $12,Y
-    CMP $1212,Y
-    CMP ($12,X)
-    CMP ($12),Y
-    CPX #$12
-    CPX $12
-    CPX $1212
-    CPY #$12
-    CPY $12
-    CPY $1212
-    DEC $12
-    DEC $1212
-    DEC $12,X
-    DEC $1212,X
-    DEX
-    DEY
-    EOR #12
-    EOR #0b11111111
-    EOR #$12
-    EOR $12
-    EOR $1212
-    EOR $12,X
-    EOR $1212,X
-    EOR $12,Y
-    EOR $1212,Y
-    EOR ($12,X)
-    EOR ($12),Y
-    INC $12
-    INC $1212
-    INC $12,X
-    INC $1212,X
-    INX
-    INY
-    JMP $1212
-    JMP ($1212)
-    JSR $1212
-    LDX #12
-    LDX #0b11111111
-    LDX #$12
-    LDX $12
-    LDX $1212
-    LDX $12,Y
-    LDX $1212,Y
-    LDY #12
-    LDY #0b11111111
-    LDY #$12
-    LDY $12
-    LDY $1212
-    LDY $12,X
-    LDY $1212,X
-    LSR
-    LSR A
-    LSR $12
-    LSR $1212
-    LSR $12,X
-    LSR $1212,X
-    ORA #12
-    ORA #0b11111111
-    ORA #$12
-    ORA $12
-    ORA $1212
-    ORA $12,X
-    ORA $1212,X
-    ORA $12,Y
-    ORA $1212,Y
-    ORA ($12,X)
-    ORA ($12),Y
-    PHA
-    PHP
-    PLA
-    PLP
-    ROL
-    ROL A
-    ROL $12
-    ROL $1212
-    ROL $12,X
-    ROL $1212,X
-    ROR
-    ROR A
-    ROR $12
-    ROR $1212
-    ROR $12,X
-    ROR $1212,X
-    RTI
-    RTS
-    SBC #12
-    SBC #0b11111111
-    SBC #$12
-    SBC $12
-    SBC $1212
-    SBC $12,X
-    SBC $1212,X
-    SBC $12,Y
-    SBC $1212,Y
-    SBC ($12,X)
-    SBC ($12),Y
-    SEC
-    SED
-    SEI
-    STA #12
-    STA #0b11111111
-    STA #$12
-    STA $12
-    STA $1212
-    STA $12,X
-    STA $1212,X
-    STA $12,Y
-    STA $1212,Y
-    STA ($12,X)
-    STA ($12),Y
-    STX $12
-    STX $1212
-    STX $12,Y
-    STX $1212,Y
-    STY $12
-    STY $1212
-    STY $12,X
-    STY $1212,X
-    TAX
-    TAY
-    TSX
-    TXA
-    TXS
-    TYA
-    LDA #[1+2]
-    LDA #1+2
-    LDA $1+12
-    LDA $1+$12
-    LDA $A+$12
-    LDA $A+12
-    LDA ([12+13],X)
-    JMP [1200+$12]
-    JMP [1200+12]
-    JMP [$1200+12]
-    JMP ($1212)
-    JMP ([$1200+$12])
-    LDA #<$12EF
-    LDA #>$AABB
-    LDA #>$FFFF
-    LDA [2*4+3]
-    TOTO = $1212
-    TOTO = $12+$12
-    TOTO = [2*4+3]
-    TOTO = 3*2+2
-    TOTO = 3+2*2
-LABEL1:
-  LDA $1212
-LABEL2
-  JMP ($FFAA)
-LABEL3: NOP
-LABEL4  PHP
-LABEL5: TOTO = 1+1
-LDA TOTO
-|}
+and eval_value (environment : env) v =
+  match v with
+  | Int i -> environment, Int i
+  | Binop (op, e1, e2) -> eval_binop environment op e1 e2
+  | Unop (op, e1) -> eval_unop environment op e1
+  | Var x -> eval_var environment x
+
+and eval_var (environment : env) (x : string) : env * value_expr =
+  try environment, Int (Env.find x environment) with
+  | Not_found ->
+    Printf.printf "Warning: Unbound variable %s\n" x;
+    environment, Var x
+
+and eval_binop env op e1 e2 =
+  let _, v1 = eval_value env e1 in
+  let _, v2 = eval_value env e2 in
+  match op, v1, v2 with
+  | Add, Int i1, Int i2 -> env, Int (i1 + i2)
+  | Mult, Int i1, Int i2 -> env, Int (i1 * i2)
+  | _ -> env, Binop (op, v1, v2)
+
+and eval_unop env op e1 =
+  let _, v1 = eval_value env e1 in
+  match op, v1 with
+  | Highbyte, Int v -> env, Int ((v land 0xFF00) lsr 8)
+  | Lowbyte, Int v -> env, Int (v land 0xFF)
+  | _ -> env, Unop (op, v1)
+
+and eval_assign (environment : env) (s : identifier) (e1 : value_expr) : env * line =
+  let _, e1' = eval_value environment e1 in
+  match s with
+  | Var sym ->
+    (match e1' with
+     | Int i -> Env.add sym i environment, Assign (s, e1')
+     | _ -> Env.add sym 0xFFFF environment, Assign (s, e1))
 ;;
 
 (*
@@ -374,22 +142,92 @@ LDA TOTO
 *)
 let test_pgm =
   {|
-      NOP
-      ; Comment
-      ; dsdsd
-      TOTO:
-      LDA $12
-      NOP
-      NOP
+  NOP
+  NOP
+  TATA = TITI
+  LDA TOTO
+  TOTO = $812
+  LDA TOTO
+  TITI = TOTO+TOTO
+  LDA [1+TOTO+TOTO]
+  ASL TITI
+  LDA $ABCD
 |}
 ;;
 
-let () =
-  let interpreted_pgm = interp test_pgm in
-  List.iter (Printf.printf "%s\n") interpreted_pgm
+let pp_var (var : identifier) =
+  match var with
+  | Var name -> Printf.sprintf "%s" name
 ;;
 
-let () =
-  let interpreted_pgm = interp pgm in
-  List.iter (Printf.printf "%s\n") interpreted_pgm
+let pp_value (v : value_expr) =
+  match v with
+  | Int i -> Printf.sprintf "%X" i
+  | _ -> "Not yet evaluated"
 ;;
+
+let pp_line = function
+  | loc, address, Assign (var, v) ->
+    Printf.sprintf "%d \t %X \t %s = %s" loc address (pp_var var) (pp_value v)
+  | loc, address, Instruction (inst, Some v) ->
+    (match inst.addressing with
+     | Immediate -> Printf.sprintf "%d \t %X \t %s #%s" loc address inst.pp (pp_value v)
+     | Accumulator -> Printf.sprintf "IMPOSSIBLE %s" inst.pp
+     | Absolute -> Printf.sprintf "%d \t %X \t %s %s" loc address inst.pp (pp_value v)
+     | AbsoluteX -> Printf.sprintf "%d \t %X \t %s %s,X" loc address inst.pp (pp_value v)
+     | AbsoluteY -> Printf.sprintf "%d \t %X \t %s %s,Y" loc address inst.pp (pp_value v)
+     | Zeropage -> Printf.sprintf "%d \t %X \t %s %s" loc address inst.pp (pp_value v)
+     | ZeropageX -> Printf.sprintf "%d \t %X \t %s %s,X" loc address inst.pp (pp_value v)
+     | ZeropageY -> Printf.sprintf "%d \t %X \t %s %s,Y" loc address inst.pp (pp_value v)
+     | PreIndexIndirect ->
+       Printf.sprintf "%d \t %X \t %s (%s,X)" loc address inst.pp (pp_value v)
+     | PostIndexIndirect ->
+       Printf.sprintf "%d \t %X \t %s (%s),Y" loc address inst.pp (pp_value v)
+     | Indirect -> Printf.sprintf "%d \t %X \t %s (%s)" loc address inst.pp (pp_value v)
+     | Relative -> Printf.sprintf "%d \t %X \t %s %s" loc address inst.pp (pp_value v)
+     | Implied -> Printf.sprintf "IMPOSSIBLE %s" inst.pp)
+  | loc, address, Instruction (inst, None) ->
+    (match inst.addressing with
+     | Immediate -> Printf.sprintf "IMPOSSIBLE %s %s" inst.pp "Immediate"
+     | Accumulator -> Printf.sprintf "%d \t %X \t %s" loc address inst.pp
+     | Absolute -> Printf.sprintf "IMPOSSIBLE %s %s" inst.pp "Absolute"
+     | AbsoluteX -> Printf.sprintf "IMPOSSIBLE %s %s,X" inst.pp "AbsoluteX"
+     | AbsoluteY -> Printf.sprintf "IMPOSSIBLE %s %s,Y" inst.pp "AbsoluteY"
+     | Zeropage -> Printf.sprintf "IMPOSSIBLE %s %s" inst.pp "ZeroPage"
+     | ZeropageX -> Printf.sprintf "IMPOSSIBLE %s %s,X" inst.pp "ZeroPageX"
+     | ZeropageY -> Printf.sprintf "IMPOSSIBLE %s %s,Y" inst.pp "ZeroPageY"
+     | PreIndexIndirect ->
+       Printf.sprintf "IMPOSSIBLE %s (%s,X)" inst.pp "PreIndexIndirect"
+     | PostIndexIndirect ->
+       Printf.sprintf "IMPOSSIBLE %s (%s),Y" inst.pp "PostIndexIndirect"
+     | Indirect -> Printf.sprintf "IMPOSSIBLE %s (%s)" inst.pp "Indirect"
+     | Relative -> Printf.sprintf "IMPOSSIBLE %s %s" inst.pp "Relative"
+     | Implied -> Printf.sprintf "%d \t %X \t %s" loc address inst.pp)
+;;
+
+let pp_result = function
+  | env, pgm ->
+    List.iter (fun line -> Printf.printf "%s\n" (pp_line line)) pgm;
+    pp_env env
+;;
+
+let interp environment s = s |> parse |> eval_pgm environment []
+let environment, first_pass = interp empty_env test_pgm
+let () = pp_result (environment, List.rev first_pass)
+
+(* TODO : Use different types for values *)
+let fixed_pgm =
+  List.map
+    (fun (eval_line : evaluated_pgm_line) : line ->
+      match eval_line with
+      | _, _, line ->
+        (match line with
+         | Instruction (inst, v) ->
+           let (Instruction (inst', v')) = fix_zeropage (Instruction (inst, v)) in
+           Instruction (inst', v')
+         | Assign (s, v) -> Assign (s, v)))
+    first_pass
+;;
+
+let environment, second_pass = eval_pgm environment [] (List.rev fixed_pgm)
+let () = pp_result (environment, List.rev second_pass)

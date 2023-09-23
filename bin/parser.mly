@@ -1,5 +1,6 @@
 %{
 open Instructions
+open Ast
 %}
 
 %token <int> INT
@@ -81,7 +82,6 @@ open Instructions
 %token A
 %token EOF
 
-
 %left GT
 %left LT
 %left PLUS
@@ -89,7 +89,8 @@ open Instructions
 
 %start program
 
-%type <Ast.asm_expr list> program
+%type <Ast.line list> program
+%type <Ast.identifier> identifier
 %type <Ast.value_expr> value_expr
 (*)
 %type <Ast.asm_expr> asm_expr
@@ -98,171 +99,178 @@ open Instructions
 
 %%
 
+program:
+	| p = line*; EOF { p }
+	;
 
-(*)
-arithm_expr:
-*)
+line:
+	| d = definition { d }
+	| s = statement { s }
+	;
+
+identifier:
+| id = ID { Var id }
+
+definition:
+  | id = ID; EQUAL; v = value_expr { Assign ( Var id, v ) }
+	;
+
+%inline binop:
+| PLUS { Add }
+| MULT { Mult }
+
+%inline unop:
+| GT { Highbyte }
+| LT { Lowbyte }
 
 value_expr: 
-	| i = INT { Int i }
-	| e1 = value_expr; PLUS ; e2 = value_expr { Binop (Add, e1, e2)}
-	| e1 = value_expr; MULT ; e2 = value_expr { Binop (Mult, e1, e2)}
-	| LT; e = value_expr  { Unop ( Lowbyte, e)}
-	| GT; e = value_expr  { Unop ( Highbyte, e)}
+	| i = INT { Int i } 
+	| id = ID { Var id }
+	| e1 = value_expr; op=binop ; e2 = value_expr { Binop (op, e1, e2)}
+	| op=unop; e = value_expr  { Unop ( op, e)}
 	| LBRACKET ; e = value_expr ; RBRACKET { e } 
 	;
 
+
+statement: 
+	| a = asm_expr { a }
+
 asm_expr:
-  | id = ID ; EQUAL; assigned_expr = value_expr { Assign (Symbol id,assigned_expr)}
-	| id = ID; COLON; { Label id }
-	| id = ID  { Label id }
 	(* Accumulator *)
-	| ASL; { Instruction( $startpos, Instructions.asl_acc, None)}
-	| ASL; A { Instruction( $startpos, Instructions.asl_acc,None)}
-	| LSR { Instruction( $startpos, Instructions.lsr_acc, None)}
-	| LSR; A { Instruction( $startpos, Instructions.lsr_acc, None)}
-	| ROL { Instruction( $startpos, Instructions.rol_acc, None)}
-	| ROL; A { Instruction( $startpos, Instructions.rol_acc, None)}
-	| ROR { Instruction( $startpos, Instructions.ror_acc, None)}
-	| ROR; A { Instruction( $startpos, Instructions.ror_acc, None)}
+	(*)
+	| ASL; { Instruction( Instructions.asl_acc, None)}
+	| LSR { Instruction( Instructions.lsr_acc, None)}
+	| ROL { Instruction( Instructions.rol_acc, None)}
+	| ROR { Instruction( Instructions.ror_acc, None)}
+	*)
+	| ASL; A { Instruction( Instructions.get_instruction ASL Accumulator,None)}
+	| LSR; A { Instruction( Instructions.get_instruction LSR Accumulator, None)}
+	| ROL; A { Instruction( Instructions.get_instruction ROL Accumulator, None)}
+	| ROR; A { Instruction( Instructions.get_instruction ROR Accumulator, None)}
 	(* Immediate *)
-	| ADC; POUND; v = option(value_expr) { Instruction( $startpos, Instructions.adc_imm, v) }
-	| AND; POUND; v = value_expr { Instruction( $startpos, Instructions.and_imm, Some v) }
-	| CMP; POUND; v = value_expr { Instruction( $startpos, Instructions.cmp_imm, Some v) }
-	| CPX; POUND; v = value_expr { Instruction( $startpos, Instructions.cpx_imm, Some v) }
-	| CPY; POUND; v = value_expr { Instruction( $startpos, Instructions.cpy_imm, Some v) }
-	| EOR; POUND; v = value_expr { Instruction( $startpos, Instructions.eor_imm, Some v) }
-	| LDA; POUND; v = value_expr { Instruction( $startpos, Instructions.lda_imm, Some v) }
-	| LDX; POUND; v = value_expr { Instruction( $startpos, Instructions.ldx_imm, Some v) }
-	| LDY; POUND; v = value_expr { Instruction( $startpos, Instructions.ldy_imm, Some v) }
-	| ORA; POUND; v = value_expr { Instruction( $startpos, Instructions.ora_imm, Some v) }
-	| SBC; POUND; v = value_expr { Instruction( $startpos, Instructions.sbc_imm, Some v) }
+	| ADC; POUND; v = value_expr { Instruction( Instructions.get_instruction ADC Immediate, Some v) }
+	| AND; POUND; v = value_expr { Instruction( Instructions.get_instruction AND Immediate, Some v) }
+	| CMP; POUND; v = value_expr { Instruction( Instructions.get_instruction CMP Immediate, Some v) }
+	| CPX; POUND; v = value_expr { Instruction( Instructions.get_instruction CPX Immediate, Some v) }
+	| CPY; POUND; v = value_expr { Instruction( Instructions.get_instruction CPY Immediate, Some v) }
+	| EOR; POUND; v = value_expr { Instruction( Instructions.get_instruction EOR Immediate, Some v) }
+	| LDA; POUND; v = value_expr { Instruction( Instructions.get_instruction LDA Immediate, Some v) }
+	| LDX; POUND; v = value_expr { Instruction( Instructions.get_instruction LDX Immediate, Some v) }
+	| LDY; POUND; v = value_expr { Instruction( Instructions.get_instruction LDY Immediate, Some v) }
+	| ORA; POUND; v = value_expr { Instruction( Instructions.get_instruction ORA Immediate, Some v) }
+	| SBC; POUND; v = value_expr { Instruction( Instructions.get_instruction SBC Immediate, Some v) }
 	(* Absolute *)
-	| JMP; v = value_expr { Instruction( $startpos, Instructions.jmp_abs, Some v)}
-	| JSR; v = value_expr { Instruction( $startpos, Instructions.jsr_abs, Some v)}
+	| JMP; v = value_expr { Instruction( Instructions.get_instruction JMP Absolute, Some v)}
+	| JSR; v = value_expr { Instruction( Instructions.get_instruction JSR Absolute, Some v)}
 	(* Absolute or Zero Page*)
-	| ADC; v = value_expr { Instruction( $startpos, Instructions.adc_abs, Some v)}
-	| AND; v = value_expr { Instruction( $startpos, Instructions.and_abs, Some v)}
-	| ASL; v = value_expr { Instruction( $startpos, Instructions.asl_abs, Some v)}
-	| BIT; v = value_expr { Instruction( $startpos, Instructions.bit_abs, Some v)}
-	| CMP; v = value_expr { Instruction( $startpos, Instructions.cmp_abs, Some v)}
-	| CPX; v = value_expr { Instruction( $startpos, Instructions.cpx_abs, Some v)}
-	| CPY; v = value_expr { Instruction( $startpos, Instructions.cpy_abs, Some v)}
-	| DEC; v = value_expr { Instruction( $startpos, Instructions.dec_abs, Some v)}
-	| EOR; v = value_expr { Instruction( $startpos, Instructions.eor_abs, Some v)}
-	| INC; v = value_expr { Instruction( $startpos, Instructions.inc_abs, Some v)}
-	| LDA; v = value_expr { Instruction( $startpos, Instructions.lda_abs, Some v)}
-	| LDX; v = value_expr { Instruction( $startpos, Instructions.ldx_abs, Some v)}
-	| LDY; v = value_expr { Instruction( $startpos, Instructions.ldy_abs, Some v)}
-	| LSR; v = value_expr { Instruction( $startpos, Instructions.lsr_abs, Some v)}
-	| ORA; v = value_expr { Instruction( $startpos, Instructions.ora_abs, Some v)}
-	| ROL; v = value_expr { Instruction( $startpos, Instructions.rol_abs, Some v)}
-	| ROR; v = value_expr { Instruction( $startpos, Instructions.ror_abs, Some v)}
-	| SBC; v = value_expr { Instruction( $startpos, Instructions.sbc_abs, Some v)}
-	| STA; v = value_expr { Instruction( $startpos, Instructions.sta_abs, Some v)}
-	| STX; v = value_expr { Instruction( $startpos, Instructions.stx_abs, Some v)}
-	| STY; v = value_expr { Instruction( $startpos, Instructions.sty_abs, Some v)}
+	| ADC; v = value_expr { Instruction( Instructions.get_instruction ADC Absolute, Some v)}
+	| AND; v = value_expr { Instruction( Instructions.get_instruction AND Absolute, Some v)}
+	| ASL; v = value_expr { Instruction( Instructions.get_instruction ASL Absolute, Some v)}
+	| BIT; v = value_expr { Instruction( Instructions.get_instruction BIT Absolute, Some v)}
+	| CMP; v = value_expr { Instruction( Instructions.get_instruction CMP Absolute, Some v)}
+	| CPX; v = value_expr { Instruction( Instructions.get_instruction CPX Absolute, Some v)}
+	| CPY; v = value_expr { Instruction( Instructions.get_instruction CPY Absolute, Some v)}
+	| DEC; v = value_expr { Instruction( Instructions.get_instruction DEC Absolute, Some v)}
+	| EOR; v = value_expr { Instruction( Instructions.get_instruction EOR Absolute, Some v)}
+	| INC; v = value_expr { Instruction( Instructions.get_instruction INC Absolute, Some v)}
+	| LDA; v = value_expr { Instruction( Instructions.get_instruction LDA Absolute, Some v)}
+	| LDX; v = value_expr { Instruction( Instructions.get_instruction LDX Absolute, Some v)}
+	| LDY; v = value_expr { Instruction( Instructions.get_instruction LDY Absolute, Some v)}
+	| LSR; v = value_expr { Instruction( Instructions.get_instruction LSR Absolute, Some v)}
+	| ORA; v = value_expr { Instruction( Instructions.get_instruction ORA Absolute, Some v)}
+	| ROL; v = value_expr { Instruction( Instructions.get_instruction ROL Absolute, Some v)}
+	| ROR; v = value_expr { Instruction( Instructions.get_instruction ROR Absolute, Some v)}
+	| SBC; v = value_expr { Instruction( Instructions.get_instruction SBC Absolute, Some v)}
+	| STA; v = value_expr { Instruction( Instructions.get_instruction STA Absolute, Some v)}
+	| STX; v = value_expr { Instruction( Instructions.get_instruction STX Absolute, Some v)}
+	| STY; v = value_expr { Instruction( Instructions.get_instruction STY Absolute, Some v)}
 	(* zeropageX *)
 	(* TODO: Check how to raise error during parsing if value > 255*)
-	| STY; v = value_expr; COMMA; X { Instruction( $startpos, Instructions.sty_zpx, Some v) }
+	| STY; v = value_expr; COMMA; X { Instruction( Instructions.get_instruction STY ZeropageX, Some v) }
 	(* AbsoluteX or zeropage,X *)
-	| ADC; v = value_expr; COMMA; X { Instruction( $startpos, Instructions.adc_absx, Some v) }
-	| AND; v = value_expr; COMMA; X { Instruction( $startpos, Instructions.and_absx, Some v) }
-	| ASL; v = value_expr; COMMA; X { Instruction( $startpos, Instructions.asl_absx, Some v) }
-	| CMP; v = value_expr; COMMA; X { Instruction( $startpos, Instructions.cmp_absx, Some v) }
-	| DEC; v = value_expr; COMMA; X { Instruction( $startpos, Instructions.dec_absx, Some v) }
-	| EOR; v = value_expr; COMMA; X { Instruction( $startpos, Instructions.eor_absx, Some v) }
-	| INC; v = value_expr; COMMA; X { Instruction( $startpos, Instructions.inc_absx, Some v) }
-	| LDA; v = value_expr; COMMA; X { Instruction( $startpos, Instructions.lda_absx, Some v) }
-	| LDY; v = value_expr; COMMA; X { Instruction( $startpos, Instructions.ldy_absx, Some v) }
-	| LSR; v = value_expr; COMMA; X { Instruction( $startpos, Instructions.lsr_absx, Some v) }
-	| ORA; v = value_expr; COMMA; X { Instruction( $startpos, Instructions.ora_absx, Some v) }
-	| ROL; v = value_expr; COMMA; X { Instruction( $startpos, Instructions.rol_absx, Some v) }
-	| ROR; v = value_expr; COMMA; X { Instruction( $startpos, Instructions.ror_absx, Some v) }
-	| SBC; v = value_expr; COMMA; X { Instruction( $startpos, Instructions.sbc_absx, Some v) }
-	| STA; v = value_expr; COMMA; X { Instruction( $startpos, Instructions.sta_absx, Some v) }
+	| ADC; v = value_expr; COMMA; X { Instruction( Instructions.get_instruction ADC AbsoluteX, Some v) }
+	| AND; v = value_expr; COMMA; X { Instruction( Instructions.get_instruction AND AbsoluteX, Some v) }
+	| ASL; v = value_expr; COMMA; X { Instruction( Instructions.get_instruction ASL AbsoluteX, Some v) }
+	| CMP; v = value_expr; COMMA; X { Instruction( Instructions.get_instruction CMP AbsoluteX, Some v) }
+	| DEC; v = value_expr; COMMA; X { Instruction( Instructions.get_instruction DEC AbsoluteX, Some v) }
+	| EOR; v = value_expr; COMMA; X { Instruction( Instructions.get_instruction EOR AbsoluteX, Some v) }
+	| INC; v = value_expr; COMMA; X { Instruction( Instructions.get_instruction INC AbsoluteX, Some v) }
+	| LDA; v = value_expr; COMMA; X { Instruction( Instructions.get_instruction LDA AbsoluteX, Some v) }
+	| LDY; v = value_expr; COMMA; X { Instruction( Instructions.get_instruction LDY AbsoluteX, Some v) }
+	| LSR; v = value_expr; COMMA; X { Instruction( Instructions.get_instruction LSR AbsoluteX, Some v) }
+	| ORA; v = value_expr; COMMA; X { Instruction( Instructions.get_instruction ORA AbsoluteX, Some v) }
+	| ROL; v = value_expr; COMMA; X { Instruction( Instructions.get_instruction ROL AbsoluteX, Some v) }
+	| ROR; v = value_expr; COMMA; X { Instruction( Instructions.get_instruction ROR AbsoluteX, Some v) }
+	| SBC; v = value_expr; COMMA; X { Instruction( Instructions.get_instruction SBC AbsoluteX, Some v) }
+	| STA; v = value_expr; COMMA; X { Instruction( Instructions.get_instruction STA AbsoluteX, Some v) }
 	(* zeropageY *)
 	(* TODO: Check how to raise error during parsing if value > 255*)
 	(* AbsoluteY *)
-	| LDA; v = value_expr; COMMA; Y { Instruction( $startpos, Instructions.lda_absy, Some v) }
-	| ADC; v = value_expr; COMMA; Y { Instruction( $startpos, Instructions.adc_absy, Some v) }
-	| AND; v = value_expr; COMMA; Y { Instruction( $startpos, Instructions.and_absy, Some v) }
-	| CMP; v = value_expr; COMMA; Y { Instruction( $startpos, Instructions.cmp_absy, Some v) }
-	| EOR; v = value_expr; COMMA; Y { Instruction( $startpos, Instructions.eor_absy, Some v) }
-	| ORA; v = value_expr; COMMA; Y { Instruction( $startpos, Instructions.ora_absy, Some v) }
-	| SBC; v = value_expr; COMMA; Y { Instruction( $startpos, Instructions.sbc_absy, Some v) }
-	| STA; v = value_expr; COMMA; Y { Instruction( $startpos, Instructions.sta_absy, Some v) }
+	| LDA; v = value_expr; COMMA; Y { Instruction( Instructions.get_instruction LDA AbsoluteY, Some v) }
+	| ADC; v = value_expr; COMMA; Y { Instruction( Instructions.get_instruction ADC AbsoluteY, Some v) }
+	| AND; v = value_expr; COMMA; Y { Instruction( Instructions.get_instruction AND AbsoluteY, Some v) }
+	| CMP; v = value_expr; COMMA; Y { Instruction( Instructions.get_instruction CMP AbsoluteY, Some v) }
+	| EOR; v = value_expr; COMMA; Y { Instruction( Instructions.get_instruction EOR AbsoluteY, Some v) }
+	| ORA; v = value_expr; COMMA; Y { Instruction( Instructions.get_instruction ORA AbsoluteY, Some v) }
+	| SBC; v = value_expr; COMMA; Y { Instruction( Instructions.get_instruction SBC AbsoluteY, Some v) }
+	| STA; v = value_expr; COMMA; Y { Instruction( Instructions.get_instruction STA AbsoluteY, Some v) }
 	(* AbsoluteY or zeropage,Y *)
-	| LDX; v = value_expr; COMMA; Y { Instruction( $startpos, Instructions.ldx_absy, Some v) }
-	| STX; v = value_expr; COMMA; Y { Instruction( $startpos, Instructions.stx_zpy, Some v) }
+	| LDX; v = value_expr; COMMA; Y { Instruction( Instructions.get_instruction LDX AbsoluteY, Some v) }
+	| STX; v = value_expr; COMMA; Y { Instruction( Instructions.get_instruction STX ZeropageY, Some v) }
 
-	| LDA; LPAREN; v = value_expr; COMMA; X; RPAREN { Instruction( $startpos, Instructions.lda_xind, Some v) }
-	| ADC; LPAREN; v = value_expr; COMMA; X; RPAREN { Instruction( $startpos, Instructions.adc_xind, Some v) }
-	| AND; LPAREN; v = value_expr; COMMA; X; RPAREN { Instruction( $startpos, Instructions.and_xind, Some v) }
-	| CMP; LPAREN; v = value_expr; COMMA; X; RPAREN { Instruction( $startpos, Instructions.cmp_xind, Some v) }
-	| EOR; LPAREN; v = value_expr; COMMA; X; RPAREN { Instruction( $startpos, Instructions.eor_xind, Some v) }
-	| ORA; LPAREN; v = value_expr; COMMA; X; RPAREN { Instruction( $startpos, Instructions.ora_xind, Some v) }
-	| SBC; LPAREN; v = value_expr; COMMA; X; RPAREN { Instruction( $startpos, Instructions.sbc_xind, Some v) }
-	| STA; LPAREN; v = value_expr; COMMA; X; RPAREN { Instruction( $startpos, Instructions.sta_xind, Some v) }
+	| LDA; LPAREN; v = value_expr; COMMA; X; RPAREN { Instruction( Instructions.get_instruction LDA PreIndexIndirect, Some v) }
+	| ADC; LPAREN; v = value_expr; COMMA; X; RPAREN { Instruction( Instructions.get_instruction ADC PreIndexIndirect, Some v) }
+	| AND; LPAREN; v = value_expr; COMMA; X; RPAREN { Instruction( Instructions.get_instruction AND PreIndexIndirect, Some v) }
+	| CMP; LPAREN; v = value_expr; COMMA; X; RPAREN { Instruction( Instructions.get_instruction CMP PreIndexIndirect, Some v) }
+	| EOR; LPAREN; v = value_expr; COMMA; X; RPAREN { Instruction( Instructions.get_instruction EOR PreIndexIndirect, Some v) }
+	| ORA; LPAREN; v = value_expr; COMMA; X; RPAREN { Instruction( Instructions.get_instruction ORA PreIndexIndirect, Some v) }
+	| SBC; LPAREN; v = value_expr; COMMA; X; RPAREN { Instruction( Instructions.get_instruction SBC PreIndexIndirect, Some v) }
+	| STA; LPAREN; v = value_expr; COMMA; X; RPAREN { Instruction( Instructions.get_instruction STA PreIndexIndirect, Some v) }
 	(* indirect, Y indexed*)
-	| LDA; LPAREN; v = value_expr; RPAREN; COMMA; Y {  Instruction( $startpos, Instructions.lda_indy, Some v)}
-	| ADC; LPAREN; v = value_expr; RPAREN; COMMA; Y {  Instruction( $startpos, Instructions.adc_indy, Some v)}
-	| AND; LPAREN; v = value_expr; RPAREN; COMMA; Y {  Instruction( $startpos, Instructions.and_indy, Some v)}
-	| CMP; LPAREN; v = value_expr; RPAREN; COMMA; Y {  Instruction( $startpos, Instructions.cmp_indy, Some v)}
-	| EOR; LPAREN; v = value_expr; RPAREN; COMMA; Y {  Instruction( $startpos, Instructions.eor_indy, Some v)}
-	| ORA; LPAREN; v = value_expr; RPAREN; COMMA; Y {  Instruction( $startpos, Instructions.ora_indy, Some v)}
-	| SBC; LPAREN; v = value_expr; RPAREN; COMMA; Y {  Instruction( $startpos, Instructions.sbc_indy, Some v)}
-	| STA; LPAREN; v = value_expr; RPAREN; COMMA; Y {  Instruction( $startpos, Instructions.sta_indy, Some v)}
+	| LDA; LPAREN; v = value_expr; RPAREN; COMMA; Y {  Instruction( Instructions.get_instruction LDA PostIndexIndirect, Some v)}
+	| ADC; LPAREN; v = value_expr; RPAREN; COMMA; Y {  Instruction( Instructions.get_instruction ADC PostIndexIndirect, Some v)}
+	| AND; LPAREN; v = value_expr; RPAREN; COMMA; Y {  Instruction( Instructions.get_instruction AND PostIndexIndirect, Some v)}
+	| CMP; LPAREN; v = value_expr; RPAREN; COMMA; Y {  Instruction( Instructions.get_instruction CMP PostIndexIndirect, Some v)}
+	| EOR; LPAREN; v = value_expr; RPAREN; COMMA; Y {  Instruction( Instructions.get_instruction EOR PostIndexIndirect, Some v)}
+	| ORA; LPAREN; v = value_expr; RPAREN; COMMA; Y {  Instruction( Instructions.get_instruction ORA PostIndexIndirect, Some v)}
+	| SBC; LPAREN; v = value_expr; RPAREN; COMMA; Y {  Instruction( Instructions.get_instruction SBC PostIndexIndirect, Some v)}
+	| STA; LPAREN; v = value_expr; RPAREN; COMMA; Y {  Instruction( Instructions.get_instruction STA PostIndexIndirect, Some v)}
 	(* Relative *)
-	| BCC; v = value_expr { Instruction( $startpos, Instructions.bcc_rel, Some v)}
-	| BCS; v = value_expr { Instruction( $startpos, Instructions.bcs_rel, Some v)}
-	| BEQ; v = value_expr { Instruction( $startpos, Instructions.beq_rel, Some v)}
-	| BMI; v = value_expr { Instruction( $startpos, Instructions.bmi_rel, Some v)}
-	| BNE; v = value_expr { Instruction( $startpos, Instructions.bne_rel, Some v)}
-	| BPL; v = value_expr { Instruction( $startpos, Instructions.bpl_rel, Some v)}
-	| BVC; v = value_expr { Instruction( $startpos, Instructions.bvc_rel, Some v)}
-	| BVS; v = value_expr { Instruction( $startpos, Instructions.bvs_rel, Some v)}
+	| BCC; v = value_expr { Instruction( Instructions.get_instruction BCC Relative, Some v)}
+	| BCS; v = value_expr { Instruction( Instructions.get_instruction BCS Relative, Some v)}
+	| BEQ; v = value_expr { Instruction( Instructions.get_instruction BEQ Relative, Some v)}
+	| BMI; v = value_expr { Instruction( Instructions.get_instruction BMI Relative, Some v)}
+	| BNE; v = value_expr { Instruction( Instructions.get_instruction BNE Relative, Some v)}
+	| BPL; v = value_expr { Instruction( Instructions.get_instruction BPL Relative, Some v)}
+	| BVC; v = value_expr { Instruction( Instructions.get_instruction BVC Relative, Some v)}
+	| BVS; v = value_expr { Instruction( Instructions.get_instruction BVS Relative, Some v)}
 	(* Implied *)
-	| BRK { Instruction( $startpos, Instructions.brk_imp, None)}
-	| CLC { Instruction( $startpos, Instructions.clc_imp, None)}
-	| CLD { Instruction( $startpos, Instructions.cld_imp, None)}
-	| CLI { Instruction( $startpos, Instructions.cli_imp, None)}
-	| CLV { Instruction( $startpos, Instructions.clv_imp, None)}
-	| DEX { Instruction( $startpos, Instructions.dex_imp, None)}
-	| DEY { Instruction( $startpos, Instructions.dey_imp, None)}
-	| INX { Instruction( $startpos, Instructions.inx_imp, None)}
-	| INY { Instruction( $startpos, Instructions.iny_imp, None)}
-	| NOP { Instruction( $startpos, Instructions.nop_imp, None)}
-	| PHA { Instruction( $startpos, Instructions.pha_imp, None)}
-	| PHP { Instruction( $startpos, Instructions.php_imp, None)}
-	| PLA { Instruction( $startpos, Instructions.pla_imp, None)}
-	| PLP { Instruction( $startpos, Instructions.plp_imp, None)}
-	| RTI { Instruction( $startpos, Instructions.rti_imp, None)}
-	| RTS { Instruction( $startpos, Instructions.rts_imp, None)}
-	| SEC { Instruction( $startpos, Instructions.sec_imp, None)}
-	| SED { Instruction( $startpos, Instructions.sed_imp, None)}
-	| SEI { Instruction( $startpos, Instructions.sei_imp, None)}
-	| TAX { Instruction( $startpos, Instructions.tax_imp, None)}
-	| TAY { Instruction( $startpos, Instructions.tay_imp, None)}
-	| TSX { Instruction( $startpos, Instructions.tsx_imp, None)}
-	| TXA { Instruction( $startpos, Instructions.txa_imp, None)}
-	| TXS { Instruction( $startpos, Instructions.txs_imp, None)}
-	| TYA { Instruction( $startpos, Instructions.tya_imp, None)}
+	| BRK { Instruction( Instructions.get_instruction BRK Implied, None)}
+	| CLC { Instruction( Instructions.get_instruction CLC Implied, None)}
+	| CLD { Instruction( Instructions.get_instruction CLD Implied, None)}
+	| CLI { Instruction( Instructions.get_instruction CLI Implied, None)}
+	| CLV { Instruction( Instructions.get_instruction CLV Implied, None)}
+	| DEX { Instruction( Instructions.get_instruction DEX Implied, None)}
+	| DEY { Instruction( Instructions.get_instruction DEY Implied, None)}
+	| INX { Instruction( Instructions.get_instruction INX Implied, None)}
+	| INY { Instruction( Instructions.get_instruction INY Implied, None)}
+	| NOP { Instruction( Instructions.get_instruction NOP Implied, None)}
+	| PHA { Instruction( Instructions.get_instruction PHA Implied, None)}
+	| PHP { Instruction( Instructions.get_instruction PHP Implied, None)}
+	| PLA { Instruction( Instructions.get_instruction PLA Implied, None)}
+	| PLP { Instruction( Instructions.get_instruction PLP Implied, None)}
+	| RTI { Instruction( Instructions.get_instruction RTI Implied, None)}
+	| RTS { Instruction( Instructions.get_instruction RTS Implied, None)}
+	| SEC { Instruction( Instructions.get_instruction SEC Implied, None)}
+	| SED { Instruction( Instructions.get_instruction SED Implied, None)}
+	| SEI { Instruction( Instructions.get_instruction SEI Implied, None)}
+	| TAX { Instruction( Instructions.get_instruction TAX Implied, None)}
+	| TAY { Instruction( Instructions.get_instruction TAY Implied, None)}
+	| TSX { Instruction( Instructions.get_instruction TSX Implied, None)}
+	| TXA { Instruction( Instructions.get_instruction TXA Implied, None)}
+	| TXS { Instruction( Instructions.get_instruction TXS Implied, None)}
+	| TYA { Instruction( Instructions.get_instruction TYA Implied, None)}
 	(* Indirect *)
-	| JMP; LPAREN; v = value_expr; RPAREN { Instruction( $startpos, Instructions.jmp_ind, Some v)}
+	| JMP; LPAREN; v = value_expr; RPAREN { Instruction (Instructions.get_instruction JMP Indirect, Some v)}
 	;
-
-program:
-	| p = list(asm_expr); EOF { p }
-	;
-
-(*
-operand:
-| POUND; v = value_expr{ Operand (Immediate, Some i) }
-| v = value_expr { Operand (Absolute, Some i ) }
-| v = value_expr; COMMA; X { Operand (AbsoluteX, Some i) }
-| v = value_expr; COMMA; Y { Operand (AbsoluteY, Some i) }
-| LPAREN; _i = INT; COMMA; X; RPAREN { Operand (Indirect, Some i) }
-*)
-
 %%
