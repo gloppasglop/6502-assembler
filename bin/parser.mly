@@ -106,6 +106,8 @@ program:
 line:
 	| d = definition { d }
 	| s = statement { s }
+	| id = ID { Label (Var id ) }
+	| id = ID; COLON { Label (Var id ) }
 	;
 
 identifier:
@@ -127,7 +129,7 @@ value_expr:
 	| i = INT { Int i } 
 	| id = ID { Var id }
 	| e1 = value_expr; op=binop ; e2 = value_expr { Binop (op, e1, e2)}
-	| op=unop; e = value_expr  { Unop ( op, e)}
+	| op = unop; e = value_expr  { Unop ( op, e)}
 	| LBRACKET ; e = value_expr ; RBRACKET { e } 
 	;
 

@@ -118,7 +118,7 @@ module Instructions = struct
          ; cycles = 2
          ; pp = "ROR"
          }
-       | _ -> failwith "Invalid instruction")
+       | _ -> failwith "Invalid Accumulator instruction")
     (* Immediate *)
     | Immediate ->
       (match mnemonic with
@@ -210,7 +210,7 @@ module Instructions = struct
          ; cycles = 2
          ; pp = "SBC"
          }
-       | _ -> failwith "Invalid instruction")
+       | _ -> failwith "Invalid Immediate instruction")
     (* Absolute *)
     | Absolute ->
       (match mnemonic with
@@ -399,7 +399,7 @@ module Instructions = struct
          ; cycles = 4
          ; pp = "STY"
          }
-       | _ -> failwith "Invalid instruction")
+       | _ -> failwith "Invalid Absolute instruction")
       (* Zero Page*)
     | Zeropage ->
       (match mnemonic with
@@ -571,7 +571,7 @@ module Instructions = struct
          ; cycles = 3
          ; pp = "STY"
          }
-       | _ -> failwith "Invaliid instruction")
+       | _ -> failwith "Invalid Zeropage instruction")
     (* AbsoluteX *)
     | AbsoluteX ->
       (match mnemonic with
@@ -695,7 +695,7 @@ module Instructions = struct
          ; cycles = 5
          ; pp = "STA"
          }
-       | _ -> failwith "Invalid instruction")
+       | _ -> failwith "Invalid AbsoluteX instruction")
     (* zeropage *)
     | ZeropageX ->
       (match mnemonic with
@@ -827,7 +827,7 @@ module Instructions = struct
          ; cycles = 4
          ; pp = "STY"
          }
-       | _ -> failwith "Invalid Instruction")
+       | _ -> failwith "Invalid ZeropageX Instruction")
     | AbsoluteY ->
       (match mnemonic with
        | LDA ->
@@ -902,7 +902,7 @@ module Instructions = struct
          ; cycles = 4
          ; pp = "LDX"
          }
-       | _ -> failwith "Invalid instruction")
+       | _ -> failwith "Invalid AbsoluteY instruction")
     (* ZeropageY *)
     | ZeropageY ->
       (match mnemonic with
@@ -922,7 +922,7 @@ module Instructions = struct
          ; cycles = 4
          ; pp = "STX"
          }
-       | _ -> failwith "Invalid instruction")
+       | _ -> failwith "Invalid ZeropageY instruction")
     | PreIndexIndirect ->
       (match mnemonic with
        | LDA ->
@@ -989,7 +989,7 @@ module Instructions = struct
          ; cycles = 4
          ; pp = "STA"
          }
-       | _ -> failwith "Invalid instrution")
+       | _ -> failwith "Invalid PreIndexIndirect instrution")
     (* indirect, Y indexed*)
     | PostIndexIndirect ->
       (match mnemonic with
@@ -1057,7 +1057,7 @@ module Instructions = struct
          ; cycles = 6
          ; pp = "STA"
          }
-       | _ -> failwith "Invalid instruction")
+       | _ -> failwith "Invalid PostIndexIndirect instruction")
     (* Relative *)
     | Relative ->
       (match mnemonic with
@@ -1125,7 +1125,7 @@ module Instructions = struct
          ; cycles = 2
          ; pp = "BVS"
          }
-       | _ -> failwith "Invalid instruction")
+       | _ -> failwith "Invalid Relative instruction")
     (* Implied *)
     | Implied ->
       (match mnemonic with
@@ -1329,7 +1329,7 @@ module Instructions = struct
          ; cycles = 2
          ; pp = "TYA"
          }
-       | _ -> failwith "Invalid instruction")
+       | _ -> failwith "Invalid Implied instruction")
       (* Indirect *)
     | Indirect ->
       (match mnemonic with
@@ -1341,6 +1341,6 @@ module Instructions = struct
          ; cycles = 5
          ; pp = "JMP"
          }
-       | _ -> failwith "Invalid instruction")
+       | _ -> failwith "Invalid Indirect instruction")
   ;;
 end
