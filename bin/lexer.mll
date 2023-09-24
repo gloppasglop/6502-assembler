@@ -52,62 +52,62 @@ rule read =
 	| "X" { X }
 	| "Y" { Y }
 	| "A" { A }
-	| "ADC" { ADC }
-	| "AND" { AND }
-	| "ASL" { ASL }
-	| "BCC" { BCC }
-	| "BCS" { BCS }
-	| "BEQ" { BEQ }
-	| "BIT" { BIT }
-	| "BMI" { BMI }
-	| "BNE" { BNE }
-	| "BPL" { BPL }
-	| "BRK" { BRK }
-	| "BVC" { BVC }
-	| "BVS" { BVS }
-	| "CLC" { CLC }
-	| "CLD" { CLD }
-	| "CLI" { CLI }
-	| "CLV" { CLV }
-	| "CMP" { CMP }
-	| "CPX" { CPX }
-	| "CPY" { CPY }
-	| "DEC" { DEC }
-	| "DEX" { DEX }
-	| "DEY" { DEY }
-	| "EOR" { EOR }
-	| "INC" { INC }
-	| "INX" { INX }
-	| "INY" { INY }
-	| "JMP" { JMP }
-	| "JSR" { JSR }
-	| "LDA" { LDA }
-	| "LDX" { LDX }
-	| "LDY" { LDY }
-	| "LSR" { LSR }
-	| "NOP" { NOP }
-	| "ORA" { ORA }
-	| "PHA" { PHA }
-	| "PHP" { PHP }
-	| "PLA" { PLA }
-	| "PLP" { PLP }
-	| "ROL" { ROL }
-	| "ROR" { ROR }
-	| "RTI" { RTI }
-	| "RTS" { RTS }
-	| "SBC" { SBC }
-	| "SEC" { SEC }
-	| "SED" { SED }
-	| "SEI" { SEI }
-	| "STA" { STA }
-	| "STX" { STX }
-	| "STY" { STY }
-	| "TAX" { TAX }
-	| "TAY" { TAY }
-	| "TSX" { TSX }
-	| "TXA" { TXA }
-	| "TXS" { TXS }
-	| "TYA" { TYA }
+	| "ADC" | "adc" { ADC }
+	| "AND" | "and" { AND }
+	| "ASL" | "asl" { ASL }
+	| "BCC" | "bcc" { BCC }
+	| "BCS" | "bcs" { BCS }
+	| "BEQ" | "beq" { BEQ }
+	| "BIT" | "bit" { BIT }
+	| "BMI" | "bmi" { BMI }
+	| "BNE" | "bne" { BNE }
+	| "BPL" | "bpl" { BPL }
+	| "BRK" | "brk" { BRK }
+	| "BVC" | "bnv" { BVC }
+	| "BVS" | "bvs" { BVS }
+	| "CLC" | "clc" { CLC }
+	| "CLD" | "cld" { CLD }
+	| "CLI" | "cli" { CLI }
+	| "CLV" | "clv" { CLV }
+	| "CMP" | "cmp" { CMP }
+	| "CPX" | "cpx" { CPX }
+	| "CPY" | "cpy" { CPY }
+	| "DEC" | "dec" { DEC }
+	| "DEX" | "dex" { DEX }
+	| "DEY" | "dey" { DEY }
+	| "EOR" | "eor" { EOR }
+	| "INC" |"inc" { INC }
+	| "INX" | "inx" { INX }
+	| "INY" | "iny" { INY }
+	| "JMP" | "jmp" { JMP }
+	| "JSR" | "jsr" { JSR }
+	| "LDA" | "lda" { LDA }
+	| "LDX" | "ldx" { LDX }
+	| "LDY" | "ldy" { LDY }
+	| "LSR" | "lsr" { LSR }
+	| "NOP" | "nop" { NOP }
+	| "ORA" | "ora" { ORA }
+	| "PHA" | "pha" { PHA }
+	| "PHP" | "php" { PHP }
+	| "PLA" | "pla" { PLA }
+	| "PLP" | "plp" { PLP }
+	| "ROL" | "rol" { ROL }
+	| "ROR" | "ror" { ROR }
+	| "RTI" | "rti" { RTI }
+	| "RTS" | "rts" { RTS }
+	| "SBC" | "sbc" { SBC }
+	| "SEC" | "sec" { SEC }
+	| "SED" | "sed" { SED }
+	| "SEI" | "sei" { SEI }
+	| "STA" | "sta" { STA }
+	| "STX" | "stx" { STX }
+	| "STY" | "sty" { STY }
+	| "TAX" | "tax" {TAX }
+	| "TAY" | "tay" { TAY }
+	| "TSX" | "tsx" { TSX }
+	| "TXA" | "txa" { TXA }
+	| "TXS" | "txs" { TXS }
+	| "TYA" | "tya" { TYA }
 	| int { INT ( int_of_string (Lexing.lexeme lexbuf)) }
 	| hexint { INT ( Utils.int_of_hexstring (Lexing.lexeme lexbuf)) }
 	| octalint { INT ( Utils.int_of_octalstring (Lexing.lexeme lexbuf)) }

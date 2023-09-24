@@ -107,7 +107,7 @@ line:
 	| d = definition { d }
 	| s = statement { s }
 	| id = ID { Label (Var id ) }
-	| id = ID; COLON { Label (Var id ) }
+	| id = ID { Label (Var id ) }
 	;
 
 identifier:

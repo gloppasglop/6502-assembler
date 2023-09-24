@@ -1,4 +1,5 @@
 open Ast
+open Stdio
 module Env = Map.Make (String)
 
 let empty_env = Env.empty
@@ -123,31 +124,6 @@ and eval_assign (environment : env) (s : identifier) (e1 : value_expr) : env * l
     (match e1' with
      | Int i -> Env.add sym i environment, Assign (s, e1')
      | _ -> Env.add sym 0xFFFF environment, Assign (s, e1))
-;;
-
-(*
-   let () = List.iter (fun pgm -> Printf.printf "%s - %s\n" pgm (interp pgm)) pgms
-*)
-let test_pgm =
-  {|
-  NOP
-  NOP
-  TATA = TITI
-LABEL3:
-  LDA TOTO
-  TOTO = $812
-LABEL1
-  LDA TOTO
-  TITI = TOTO+TOTO
-  LDA [1+TOTO+TOTO]
-  ASL TITI
-LABEL2  LDA #12
-  JSR $FFAB
-  JSR LABEL1
-  LDA $AA
-  LDA $ABCD
-  JMP LABEL2
-|}
 ;;
 
 let pp_var (var : identifier) =
@@ -321,8 +297,10 @@ let pp_result = function
     pp_env env
 ;;
 
+let file = "test.asm"
+let pgm = In_channel.read_all file
 let interp environment s = s |> parse |> eval_pgm environment []
-let environment, first_pass = interp empty_env test_pgm
+let environment, first_pass = interp empty_env pgm
 let () = pp_result (environment, List.rev first_pass)
 
 (* TODO : Use different types for values *)
