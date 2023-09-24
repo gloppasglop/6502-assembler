@@ -27,5 +27,6 @@ type instruction = Instructions.instruction
 type line =
   | Assign of identifier * value_expr
   | Instruction of instruction * value_expr option
+  | Label of identifier
 
 type asm_line = Instruction of instruction * value_expr option

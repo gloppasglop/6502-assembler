@@ -28,9 +28,12 @@ let fix_zeropage (instruction : asm_line) : asm_line =
         | Int i ->
           (match inst.addressing with
            | Absolute ->
-             if i <= 255
-             then Instruction (Instructions.get_instruction inst.mnemonic Zeropage, v)
-             else Instruction ({ inst with addressing = Absolute }, v)
+             (match inst.mnemonic with
+              | JSR | JMP -> Instruction ({ inst with addressing = Absolute }, v)
+              | _ ->
+                if i <= 255
+                then Instruction (Instructions.get_instruction inst.mnemonic Zeropage, v)
+                else Instruction ({ inst with addressing = Absolute }, v))
            | AbsoluteX ->
              if i <= 255
              then Instruction (Instructions.get_instruction inst.mnemonic ZeropageX, v)
@@ -60,19 +63,21 @@ let rec eval_pgm
   match pgm with
   | [] -> environment, evaluated_pgm
   | head :: tail ->
-    let loc, address =
+    let environment, loc, address =
       match evaluated_pgm with
-      | [] -> 0, 0
+      | [] -> environment, 0, 0
       | (loc, address, line') :: _ ->
         (match line' with
-         | Assign (_, _) -> loc + 1, address
-         | Instruction (i, _) -> loc + 1, address + i.bytes)
+         | Assign (_, _) -> environment, loc + 1, address
+         | Instruction (i, _) -> environment, loc + 1, address + i.bytes
+         | Label (Var l) -> Env.add l address environment, loc + 1, address)
     in
     let env', _, line = eval_asm environment head in
     eval_pgm env' ((loc, address, line) :: evaluated_pgm) tail
 
 and eval_asm (environment : env) line =
   match line with
+  | Label (Var _) -> environment, 0, line
   | Assign (s, v) ->
     let env', line' = eval_assign environment s v in
     env', 0, line'
@@ -81,24 +86,6 @@ and eval_asm (environment : env) line =
     let (Instruction (inst', v')) = fix_zeropage (Instruction (inst, Some v')) in
     environment, inst'.bytes, Instruction (inst', v')
   | Instruction (inst, None) -> environment, inst.bytes, line
-(*
-   let _, v' = eval_value env v in
-   (match v' with
-   | VInt i ->
-   if i > 0xFFFF
-   then failwith "Value too large"
-   else if i <= 0xFF
-   then env, Instruction (inst, Some (Int ((inst.opcode lsl 8) lor i)))
-   else
-   ( env
-   , Instruction
-   ( inst
-   , Some
-   (Int
-   ((inst.opcode lsl 16)
-   lor ((i land 0xFF00) lsr 8)
-   lor ((i land 0x00FF) lsl 8))) ) ))
-*)
 
 and eval_value (environment : env) v =
   match v with
@@ -132,6 +119,7 @@ and eval_assign (environment : env) (s : identifier) (e1 : value_expr) : env * l
   let _, e1' = eval_value environment e1 in
   match s with
   | Var sym ->
+    Printf.printf "EVAL_ASSIGN %s\n" sym;
     (match e1' with
      | Int i -> Env.add sym i environment, Assign (s, e1')
      | _ -> Env.add sym 0xFFFF environment, Assign (s, e1))
@@ -145,13 +133,20 @@ let test_pgm =
   NOP
   NOP
   TATA = TITI
+LABEL3:
   LDA TOTO
   TOTO = $812
+LABEL1
   LDA TOTO
   TITI = TOTO+TOTO
   LDA [1+TOTO+TOTO]
   ASL TITI
+LABEL2  LDA #12
+  JSR $FFAB
+  JSR LABEL1
+  LDA $AA
   LDA $ABCD
+  JMP LABEL2
 |}
 ;;
 
@@ -166,30 +161,144 @@ let pp_value (v : value_expr) =
   | _ -> "Not yet evaluated"
 ;;
 
+let machine_code = function
+  | Instruction (inst, None) -> Some inst.opcode
+  | Instruction (inst, Some v) ->
+    (match v with
+     | Int i ->
+       if i > 0xFFFF
+       then failwith "Value too large"
+       else if i <= 0xFF
+       then Some ((inst.opcode lsl 8) lor i)
+       else
+         Some
+           ((inst.opcode lsl 16) lor ((i land 0xFF00) lsr 8) lor ((i land 0x00FF) lsl 8))
+     | _ -> None)
+;;
+
+let pp_machine_code = function
+  | Some i ->
+    if i <= 0xFF
+    then Printf.sprintf "%02X" i
+    else if i <= 0xFFFF
+    then Printf.sprintf "%02X %02X" ((i land 0xFF00) lsr 8) (i land 0x00FF)
+    else
+      Printf.sprintf
+        "%02X %02X %02X"
+        ((i land 0xFF0000) lsr 16)
+        ((i land 0x00FF00) lsr 8)
+        (i land 0x0000FF)
+  | None -> "Impossible"
+;;
+
 let pp_line = function
-  | loc, address, Assign (var, v) ->
-    Printf.sprintf "%d \t %X \t %s = %s" loc address (pp_var var) (pp_value v)
+  | loc, address, Label (Var l) ->
+    Printf.sprintf "%4d  %04X               %s" loc address l
+  | loc, _, Assign (var, v) ->
+    Printf.sprintf
+      "%4d                                  %s = %s"
+      loc
+      (pp_var var)
+      (pp_value v)
   | loc, address, Instruction (inst, Some v) ->
+    let mcode = pp_machine_code (machine_code (Instruction (inst, Some v))) in
     (match inst.addressing with
-     | Immediate -> Printf.sprintf "%d \t %X \t %s #%s" loc address inst.pp (pp_value v)
+     | Immediate ->
+       Printf.sprintf
+         "%4d  %04X  %9s                 %s #%s"
+         loc
+         address
+         mcode
+         inst.pp
+         (pp_value v)
      | Accumulator -> Printf.sprintf "IMPOSSIBLE %s" inst.pp
-     | Absolute -> Printf.sprintf "%d \t %X \t %s %s" loc address inst.pp (pp_value v)
-     | AbsoluteX -> Printf.sprintf "%d \t %X \t %s %s,X" loc address inst.pp (pp_value v)
-     | AbsoluteY -> Printf.sprintf "%d \t %X \t %s %s,Y" loc address inst.pp (pp_value v)
-     | Zeropage -> Printf.sprintf "%d \t %X \t %s %s" loc address inst.pp (pp_value v)
-     | ZeropageX -> Printf.sprintf "%d \t %X \t %s %s,X" loc address inst.pp (pp_value v)
-     | ZeropageY -> Printf.sprintf "%d \t %X \t %s %s,Y" loc address inst.pp (pp_value v)
+     | Absolute ->
+       Printf.sprintf
+         "%4d  %04X  %9s                 %s %s"
+         loc
+         address
+         mcode
+         inst.pp
+         (pp_value v)
+     | AbsoluteX ->
+       Printf.sprintf
+         "%4d  %04X  %9s                 %s %s,X"
+         loc
+         address
+         mcode
+         inst.pp
+         (pp_value v)
+     | AbsoluteY ->
+       Printf.sprintf
+         "%4d  %04X  %9s                 %s %s,Y"
+         loc
+         address
+         mcode
+         inst.pp
+         (pp_value v)
+     | Zeropage ->
+       Printf.sprintf
+         "%4d  %04X  %9s                 %s %s"
+         loc
+         address
+         mcode
+         inst.pp
+         (pp_value v)
+     | ZeropageX ->
+       Printf.sprintf
+         "%4d  %04X  %9s                 %s %s,X"
+         loc
+         address
+         mcode
+         inst.pp
+         (pp_value v)
+     | ZeropageY ->
+       Printf.sprintf
+         "%4d  %04X  %9s                 %s %s,Y"
+         loc
+         address
+         mcode
+         inst.pp
+         (pp_value v)
      | PreIndexIndirect ->
-       Printf.sprintf "%d \t %X \t %s (%s,X)" loc address inst.pp (pp_value v)
+       Printf.sprintf
+         "%4d  %04X  %9s                 %s (%s,X)"
+         loc
+         address
+         mcode
+         inst.pp
+         (pp_value v)
      | PostIndexIndirect ->
-       Printf.sprintf "%d \t %X \t %s (%s),Y" loc address inst.pp (pp_value v)
-     | Indirect -> Printf.sprintf "%d \t %X \t %s (%s)" loc address inst.pp (pp_value v)
-     | Relative -> Printf.sprintf "%d \t %X \t %s %s" loc address inst.pp (pp_value v)
+       Printf.sprintf
+         "%4d  %04X  %9s                 %s (%s),Y"
+         loc
+         address
+         mcode
+         inst.pp
+         (pp_value v)
+     | Indirect ->
+       Printf.sprintf
+         "%4d  %04X  %9s                 %s (%s)"
+         loc
+         address
+         mcode
+         inst.pp
+         (pp_value v)
+     | Relative ->
+       Printf.sprintf
+         "%4d  %04X  %9s                 %s %s"
+         loc
+         address
+         mcode
+         inst.pp
+         (pp_value v)
      | Implied -> Printf.sprintf "IMPOSSIBLE %s" inst.pp)
   | loc, address, Instruction (inst, None) ->
+    let mcode = pp_machine_code (machine_code (Instruction (inst, None))) in
     (match inst.addressing with
      | Immediate -> Printf.sprintf "IMPOSSIBLE %s %s" inst.pp "Immediate"
-     | Accumulator -> Printf.sprintf "%d \t %X \t %s" loc address inst.pp
+     | Accumulator ->
+       Printf.sprintf "%4d  %04X  %9s                 %s" loc address mcode inst.pp
      | Absolute -> Printf.sprintf "IMPOSSIBLE %s %s" inst.pp "Absolute"
      | AbsoluteX -> Printf.sprintf "IMPOSSIBLE %s %s,X" inst.pp "AbsoluteX"
      | AbsoluteY -> Printf.sprintf "IMPOSSIBLE %s %s,Y" inst.pp "AbsoluteY"
@@ -202,7 +311,8 @@ let pp_line = function
        Printf.sprintf "IMPOSSIBLE %s (%s),Y" inst.pp "PostIndexIndirect"
      | Indirect -> Printf.sprintf "IMPOSSIBLE %s (%s)" inst.pp "Indirect"
      | Relative -> Printf.sprintf "IMPOSSIBLE %s %s" inst.pp "Relative"
-     | Implied -> Printf.sprintf "%d \t %X \t %s" loc address inst.pp)
+     | Implied ->
+       Printf.sprintf "%4d  %04X  %9s                 %s" loc address mcode inst.pp)
 ;;
 
 let pp_result = function
@@ -222,10 +332,11 @@ let fixed_pgm =
       match eval_line with
       | _, _, line ->
         (match line with
+         | Label _ -> line
          | Instruction (inst, v) ->
            let (Instruction (inst', v')) = fix_zeropage (Instruction (inst, v)) in
            Instruction (inst', v')
-         | Assign (s, v) -> Assign (s, v)))
+         | Assign (_, _) -> line))
     first_pass
 ;;
 
