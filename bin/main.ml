@@ -20,7 +20,7 @@ let parse (s : string) : line list =
 *)
 open Instructions
 
-let fix_zeropage (instruction : asm_line) : asm_line =
+let fix_zeropage (instruction : asm_line) : instruction * value_expr option =
   match instruction with
   | Instruction (inst, v) ->
     (match v with
@@ -30,33 +30,40 @@ let fix_zeropage (instruction : asm_line) : asm_line =
           (match inst.addressing with
            | Absolute ->
              (match inst.mnemonic with
-              | JSR | JMP -> Instruction ({ inst with addressing = Absolute }, v)
+              | JSR | JMP -> { inst with addressing = Absolute }, v
               | _ ->
                 if i <= 255
-                then Instruction (Instructions.get_instruction inst.mnemonic Zeropage, v)
-                else Instruction ({ inst with addressing = Absolute }, v))
+                then Instructions.get_instruction inst.mnemonic Zeropage, v
+                else { inst with addressing = Absolute }, v)
            | AbsoluteX ->
              if i <= 255
-             then Instruction (Instructions.get_instruction inst.mnemonic ZeropageX, v)
-             else Instruction (Instructions.get_instruction inst.mnemonic AbsoluteX, v)
+             then Instructions.get_instruction inst.mnemonic ZeropageX, v
+             else Instructions.get_instruction inst.mnemonic AbsoluteX, v
            | AbsoluteY ->
              (match inst.mnemonic with
               | LDX | STX ->
                 if i <= 255
-                then Instruction (Instructions.get_instruction inst.mnemonic ZeropageY, v)
-                else Instruction (Instructions.get_instruction inst.mnemonic AbsoluteY, v)
-              | _ -> Instruction (Instructions.get_instruction inst.mnemonic AbsoluteY, v))
-           | _ -> instruction)
-        | _ -> instruction)
-     | None -> Instruction (inst, v))
+                then Instructions.get_instruction inst.mnemonic ZeropageY, v
+                else Instructions.get_instruction inst.mnemonic AbsoluteY, v
+              | _ -> Instructions.get_instruction inst.mnemonic AbsoluteY, v)
+           | _ -> inst, v)
+        | _ -> inst, v)
+     | None -> inst, v)
 ;;
 
 type loc = int
 type address = int
 type evaluated_pgm_line = loc * address * line
 
+type pass =
+  | First
+  | Second
+
 let rec eval_pgm
+  (pass : pass)
   (environment : env)
+  (loc : loc)
+  (address : address)
   (evaluated_pgm : evaluated_pgm_line list)
   (pgm : line list)
   : env * evaluated_pgm_line list
@@ -64,29 +71,70 @@ let rec eval_pgm
   match pgm with
   | [] -> environment, evaluated_pgm
   | head :: tail ->
-    let environment, loc, address =
-      match evaluated_pgm with
-      | [] -> environment, 0, 0
-      | (loc, address, line') :: _ ->
-        (match line' with
-         | Assign (_, _) -> environment, loc + 1, address
-         | Instruction (i, _) -> environment, loc + 1, address + i.bytes
-         | Label (Var l) -> Env.add l address environment, loc + 1, address)
-    in
-    let env', _, line = eval_asm environment head in
-    eval_pgm env' ((loc, address, line) :: evaluated_pgm) tail
+    let environment', offset, line = eval_asm pass environment address head in
+    eval_pgm
+      pass
+      environment'
+      (loc + 1)
+      (address + offset)
+      ((loc, address, line) :: evaluated_pgm)
+      tail
 
-and eval_asm (environment : env) line =
+and eval_asm pass (environment : env) address line =
   match line with
-  | Label (Var _) -> environment, 0, line
+  | Label (Var l) -> Env.add l address environment, 0, line
   | Assign (s, v) ->
     let env', line' = eval_assign environment s v in
-    env', 0, line'
-  | Instruction (inst, Some v) ->
-    let _, v' = eval_value environment v in
-    let (Instruction (inst', v')) = fix_zeropage (Instruction (inst, Some v')) in
-    environment, inst'.bytes, Instruction (inst', v')
-  | Instruction (inst, None) -> environment, inst.bytes, line
+    let pc =
+      match line' with
+      | Assign (_, Int pc') -> pc'
+      | _ -> failwith "Impossible: Should be Assign"
+    in
+    env', pc - address, line'
+  | Bytes l -> environment, List.length l, line
+  | Instruction (inst, sv) ->
+    (match sv with
+     | Some v ->
+       let _, v' = eval_operand_value environment v in
+       let inst', v'' =
+         match inst.addressing with
+         | Accumulator | Implied ->
+           failwith "Accumulator or Implied should not have operand"
+         (* two bytes operand *)
+         | Absolute -> fix_zeropage (Instruction (inst, Some v'))
+         | AbsoluteX -> fix_zeropage (Instruction (inst, Some v'))
+         | AbsoluteY -> fix_zeropage (Instruction (inst, Some v'))
+         | Indirect -> inst, Some v'
+         (* Single byte operand *)
+         | Immediate -> inst, Some v'
+         | Zeropage -> inst, Some v'
+         | ZeropageX -> inst, Some v'
+         | ZeropageY -> inst, Some v'
+         | PreIndexIndirect -> inst, Some v'
+         | PostIndexIndirect -> inst, Some v'
+         | Relative ->
+           (match pass with
+            | First ->
+              (match v' with
+               (* Check relative jump lower than +/- 127 *)
+               | Int i -> inst, Some (Int ((i - address - 2) land 0xFF))
+               | _ -> inst, Some v')
+            | Second ->
+              (match v with
+               | Int _ -> inst, Some v
+               | _ ->
+                 (match v' with
+                  | Int i -> inst, Some (Int ((i - address - 2) land 0xFF))
+                  | _ -> failwith "Should already be avaluated to a value")))
+       in
+       environment, inst'.bytes, Instruction (inst', v'')
+     | None -> environment, inst.bytes, line)
+
+and eval_operand_value (environment : env) v =
+  let tmp_expr = eval_value environment v in
+  match tmp_expr with
+  | _, Int i -> if i < 0 then environment, Int (i land 0xFFFF) else tmp_expr
+  | _, _ -> tmp_expr
 
 and eval_value (environment : env) v =
   match v with
@@ -106,7 +154,9 @@ and eval_binop env op e1 e2 =
   let _, v2 = eval_value env e2 in
   match op, v1, v2 with
   | Add, Int i1, Int i2 -> env, Int (i1 + i2)
+  | Minus, Int i1, Int i2 -> env, Int (i1 - i2)
   | Mult, Int i1, Int i2 -> env, Int (i1 * i2)
+  | Div, Int i1, Int i2 -> env, Int (i1 / i2)
   | _ -> env, Binop (op, v1, v2)
 
 and eval_unop env op e1 =
@@ -168,6 +218,10 @@ let pp_machine_code = function
 ;;
 
 let pp_line = function
+  | loc, address, Bytes l ->
+    let bytes_as_string = List.map (fun i -> Printf.sprintf "%02X " i) l in
+    let pp_bytes = List.fold_left ( ^ ) "" bytes_as_string in
+    Printf.sprintf "%4d  %04X      %s" loc address pp_bytes
   | loc, address, Label (Var l) ->
     Printf.sprintf "%4d  %04X               %s" loc address l
   | loc, _, Assign (var, v) ->
@@ -274,7 +328,7 @@ let pp_line = function
     (match inst.addressing with
      | Immediate -> Printf.sprintf "IMPOSSIBLE %s %s" inst.pp "Immediate"
      | Accumulator ->
-       Printf.sprintf "%4d  %04X  %9s                 %s" loc address mcode inst.pp
+       Printf.sprintf "%4d  %04X  %6s                    %s" loc address mcode inst.pp
      | Absolute -> Printf.sprintf "IMPOSSIBLE %s %s" inst.pp "Absolute"
      | AbsoluteX -> Printf.sprintf "IMPOSSIBLE %s %s,X" inst.pp "AbsoluteX"
      | AbsoluteY -> Printf.sprintf "IMPOSSIBLE %s %s,Y" inst.pp "AbsoluteY"
@@ -288,7 +342,7 @@ let pp_line = function
      | Indirect -> Printf.sprintf "IMPOSSIBLE %s (%s)" inst.pp "Indirect"
      | Relative -> Printf.sprintf "IMPOSSIBLE %s %s" inst.pp "Relative"
      | Implied ->
-       Printf.sprintf "%4d  %04X  %9s                 %s" loc address mcode inst.pp)
+       Printf.sprintf "%4d  %04X  %6s                    %s" loc address mcode inst.pp)
 ;;
 
 let pp_result = function
@@ -297,9 +351,21 @@ let pp_result = function
     pp_env env
 ;;
 
-let file = "test.asm"
-let pgm = In_channel.read_all file
-let interp environment s = s |> parse |> eval_pgm environment []
+let usage_msg = "append [-verbose] <file1> [<file2>] ... -o <output>"
+let input_file = ref ""
+let origin = ref 0
+let anon_fun _ = ()
+
+let speclist =
+  [ "-f", Arg.Set_string input_file, "Input file name"
+  ; "-o", Arg.Set_int origin, "Origin"
+  ]
+;;
+
+let () = Arg.parse speclist anon_fun usage_msg
+let () = Printf.printf "Program: %s\n" !input_file
+let pgm = In_channel.read_all !input_file
+let interp environment s = s |> parse |> eval_pgm First environment 0 !origin []
 let environment, first_pass = interp empty_env pgm
 let () = pp_result (environment, List.rev first_pass)
 
@@ -310,13 +376,20 @@ let fixed_pgm =
       match eval_line with
       | _, _, line ->
         (match line with
+         | Bytes _ -> line
          | Label _ -> line
          | Instruction (inst, v) ->
-           let (Instruction (inst', v')) = fix_zeropage (Instruction (inst, v)) in
-           Instruction (inst', v')
+           Instruction (inst, v)
+           (*
+              let (Instruction (inst', v')) = fix_zeropage (Instruction (inst, v)) in
+              Instruction (inst', v')
+           *)
          | Assign (_, _) -> line))
     first_pass
 ;;
 
-let environment, second_pass = eval_pgm environment [] (List.rev fixed_pgm)
+let environment, second_pass =
+  eval_pgm Second environment 0 !origin [] (List.rev fixed_pgm)
+;;
+
 let () = pp_result (environment, List.rev second_pass)
