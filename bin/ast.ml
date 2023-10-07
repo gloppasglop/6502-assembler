@@ -1,6 +1,8 @@
 type bop =
   | Add
+  | Minus
   | Mult
+  | Div
 
 type unop =
   | Highbyte
@@ -28,5 +30,6 @@ type line =
   | Assign of identifier * value_expr
   | Instruction of instruction * value_expr option
   | Label of identifier
+  | Bytes of int list
 
 type asm_line = Instruction of instruction * value_expr option

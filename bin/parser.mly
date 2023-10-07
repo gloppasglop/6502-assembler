@@ -5,12 +5,15 @@ open Ast
 
 %token <int> INT
 %token <string> ID
+%token DCB
 (*
 %token <int> BYTE
 %token <int> ADDRESS
 *)
 %token PLUS
+%token MINUS
 %token MULT 
+%token DIV 
 %token EQUAL
 %token COLON
 %token LPAREN
@@ -82,10 +85,17 @@ open Ast
 %token A
 %token EOF
 
-%left GT
-%left LT
-%left PLUS
-%left MULT
+
+%left PLUS MINUS
+%left MULT DIV
+%nonassoc GT LT
+
+%nonassoc POUND
+%nonassoc ADC AND ASL BCC BCS BEQ BIT BPL BVS CPX CPY DEC BVC
+%nonassoc EOR INC JMP JSR LDA LDX LDY STA STX STY BMI BNE LSR
+%nonassoc ORA ROR ROL CMP SBC 
+%nonassoc unary_mult
+
 
 %start program
 
@@ -108,18 +118,22 @@ line:
 	| s = statement { s }
 	| id = ID { Label (Var id ) }
 	| id = ID; COLON { Label (Var id ) }
+	| DCB; l = separated_list(COMMA,INT) { Bytes l }
 	;
 
 identifier:
 | id = ID { Var id }
 
 definition:
-  | id = ID; EQUAL; v = value_expr { Assign ( Var id, v ) }
+  | MULT EQUAL  v = value_expr %prec unary_mult { Assign ( Var "__PC__", v ) } 
+  | id = ID  EQUAL  v = value_expr %prec unary_mult { Assign ( Var id, v ) }
 	;
 
 %inline binop:
 | PLUS { Add }
+| MINUS { Minus }
 | MULT { Mult }
+| DIV { Div }
 
 %inline unop:
 | GT { Highbyte }

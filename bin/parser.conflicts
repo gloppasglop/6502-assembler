@@ -1,0 +1,27 @@
+
+** Conflict (reduce/reduce) in state 136.
+** Tokens involved: TYA TXS TXA TSX TAY TAX STY STX STA SEI SED SEC SBC RTS RTI ROR ROL PLP PLA PHP PHA ORA NOP LSR LDY LDX LDA JSR JMP INY INX INC ID EOR EOF DEY DEX DEC CPY CPX CMP CLV CLI CLD CLC BVS BVC BRK BPL BNE BMI BIT BEQ BCS BCC ASL AND ADC
+** The following explanations concentrate on token TYA.
+** This state is reached from program after reading:
+
+ID
+
+** The derivations that appear below have the following common factor:
+** (The question mark symbol (?) represents the spot where the derivations begin to differ.)
+
+program 
+list(line) EOF 
+line list(line) // lookahead token appears because list(line) can begin with TYA
+(?)
+
+** In state 136, looking ahead at TYA, reducing production
+** line -> ID
+** is permitted because of the following sub-derivation:
+
+ID . 
+
+** In state 136, looking ahead at TYA, reducing production
+** line -> ID
+** is permitted because of the following sub-derivation:
+
+ID . 
