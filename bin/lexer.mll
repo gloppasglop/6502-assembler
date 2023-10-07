@@ -12,7 +12,7 @@ let next_line lexbuf =
 
 let newline = '\n' | "\r\n"
 let digit = ['0'-'9']
-let int = '-'? digit+
+let int = digit+
 let wsp = [' ' '\t']+
 let alpha = ['a'-'z' 'A'-'Z']
 
@@ -20,7 +20,7 @@ let id = (alpha) (alpha|digit|'_')*
 
 
 let hexprefix = "0x" | '$' | '&'
-let hexdigit = ['0'-'9' 'A'-'F']
+let hexdigit = ['0'-'9' 'A'-'F' 'a'-'f']
 let hexint = hexprefix hexdigit+
 let hexint8 = hexprefix hexdigit | hexprefix hexdigit hexdigit
 
@@ -36,9 +36,14 @@ let binaryint = binaryprefix binarydigit+
 rule read = 
 	parse
 	| wsp { read lexbuf}
+	 (*
+  | newline { NEWLINE }
+	*)
   | newline { next_line lexbuf; read lexbuf }
 	| "+" { PLUS }
+	| "-" { MINUS }
 	| "*" { MULT }
+	| "/" { DIV }
 	| "=" { EQUAL }
 	| ":" { COLON }
 	| "(" { LPAREN }
@@ -49,9 +54,9 @@ rule read =
 	| "]" { RBRACKET }
 	| "#" { POUND }
 	| "," { COMMA }
-	| "X" { X }
-	| "Y" { Y }
-	| "A" { A }
+	| "X" | "x" { X }
+	| "Y" | "y" { Y }
+	| "A" | "a" { A }
 	| "ADC" | "adc" { ADC }
 	| "AND" | "and" { AND }
 	| "ASL" | "asl" { ASL }
@@ -108,6 +113,7 @@ rule read =
 	| "TXA" | "txa" { TXA }
 	| "TXS" | "txs" { TXS }
 	| "TYA" | "tya" { TYA }
+	| "DCB" | "dcb" { DCB }
 	| int { INT ( int_of_string (Lexing.lexeme lexbuf)) }
 	| hexint { INT ( Utils.int_of_hexstring (Lexing.lexeme lexbuf)) }
 	| octalint { INT ( Utils.int_of_octalstring (Lexing.lexeme lexbuf)) }
