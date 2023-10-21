@@ -351,14 +351,39 @@ let pp_result = function
     pp_env env
 ;;
 
+let value_to_int_list = function
+  | Int i ->
+    let i' = 0xFFFF land i in
+    if i' <= 0xFF then [ i' ] else [ i' land 0xFF; (i' land 0xFF00) lsr 8 ]
+  | _ -> failwith "Impossible"
+;;
+
+let line_to_bytes (line : address * address * line) : (int * int list) option =
+  match line with
+  | _, address, Bytes l -> Some (address, l)
+  | _, _, Label _ -> None
+  | _, _, Assign _ -> None
+  | _, address, Instruction (inst, Some v) ->
+    (match inst.addressing with
+     | Accumulator | Implied -> failwith "Accumulator Impossible"
+     | _ -> Some (address, inst.opcode :: value_to_int_list v))
+  | _, address, Instruction (inst, None) ->
+    (match inst.addressing with
+     | Accumulator | Implied -> Some (address, [ inst.opcode ])
+     | _ -> failwith "Impossible")
+;;
+
+let compile pgm = List.map line_to_bytes pgm
 let usage_msg = "append [-verbose] <file1> [<file2>] ... -o <output>"
 let input_file = ref ""
+let output_file = ref ""
 let origin = ref 0
 let anon_fun _ = ()
 
 let speclist =
   [ "-f", Arg.Set_string input_file, "Input file name"
   ; "-o", Arg.Set_int origin, "Origin"
+  ; "-s", Arg.Set_string output_file, "Output file name"
   ]
 ;;
 
@@ -393,3 +418,46 @@ let environment, second_pass =
 ;;
 
 let () = pp_result (environment, List.rev second_pass)
+let compiled = List.filter_map (fun x -> x) (compile (List.rev second_pass))
+
+(* merge consecutive bytes *)
+let merge pgm =
+  let rec merge_aux acc pgm =
+    match pgm with
+    | [] -> acc
+    | (current_addr, current_bytes) :: rest_pgm ->
+      (match acc with
+       | [] -> merge_aux [ current_addr, current_bytes ] rest_pgm
+       | (previous_addr, previous_bytes) :: rest_acc ->
+         if current_addr = previous_addr + List.length previous_bytes
+         then
+           merge_aux
+             ((previous_addr, previous_bytes @ current_bytes) :: rest_acc)
+             rest_pgm
+         else merge_aux ((current_addr, current_bytes) :: acc) rest_pgm)
+  in
+  merge_aux [] pgm
+;;
+
+let () =
+  List.iter
+    (fun l ->
+      match l with
+      | addr, bytes ->
+        let bytes_str =
+          List.fold_left (fun acc s -> acc ^ Printf.sprintf "%02X" s) "" bytes
+        in
+        Printf.printf "%04X %s\n" addr bytes_str)
+    (merge compiled |> List.rev)
+;;
+
+let outc = Out_channel.create ~append:false !output_file
+
+let () =
+  List.iter
+    (fun hex_record ->
+      Printf.fprintf outc "%s\n" (Intelhex.string_of_hex_record hex_record))
+    (Intelhex.mem_to_hex 16 (merge compiled))
+;;
+
+let () = Out_channel.close outc
